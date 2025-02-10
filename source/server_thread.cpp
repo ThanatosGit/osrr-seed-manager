@@ -13,7 +13,7 @@
 
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
-#define RECV_BUFFERSIZE 4096 * 10
+#define RECV_BUFFERSIZE 4096 * 8
 
 extern char homebrew_path[];
 

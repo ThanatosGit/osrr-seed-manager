@@ -18,7 +18,7 @@
 #include "server_thread.h"
 #include "zip.h"
 
-#define STACKSIZE (4 * 1024)
+#define STACKSIZE (8 * 1024)
 #define MAX_ENTIRES_PER_DIR 50
 
 std::vector<char *> pixel_buffer();
@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
     // The priority of these child threads must be higher (aka the value is
     // lower) than that of the main thread, otherwise there is thread
     // starvation due to stdio being locked.
-    server_thread = threadCreate(server_thread_main, NULL, STACKSIZE, prio - 1, -2, false);
+    server_thread = threadCreate(server_thread_main, NULL, STACKSIZE, 0x18, 0, false);
 
     // Main loop
     while (aptMainLoop()) {
