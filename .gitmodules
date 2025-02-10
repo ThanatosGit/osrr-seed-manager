@@ -1,0 +1,6 @@
+[submodule "zlib"]
+	path = zlib
+	url = git@github.com:madler/zlib.git
+[submodule "imgui-3ds"]
+	path = imgui-3ds
+	url = git@github.com:hax0kartik/imgui-3ds.git

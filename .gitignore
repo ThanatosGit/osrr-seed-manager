@@ -1,0 +1,8 @@
+build
+*.3dsx
+*.cia
+*.elf
+*.smdh
+*.d
+*.o
+.vscode/settings.json

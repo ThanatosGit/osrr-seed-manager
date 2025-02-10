@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build osrr-seed-manager 3dsx and smdh
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm
+      options: --user 1001
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+        fetch-tags: true
+    - name: Compile zlib
+      run: |
+        cd zlib/
+        AR=$DEVKITPRO/devkitARM/arm-none-eabi/bin/ar CC=$DEVKITPRO/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" ./configure --static
+        make
+        mkdir -p lib
+        cp libz.* lib/
+        cd contrib/minizip
+        CC=/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-D MINIZIP_FOPEN_NO_64 -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" make
+        cd ../../../
+    - name: Build
+      run: make
+    - name: Make cia
+      run: |
+        $DEVKITPRO/devkitARM/arm-none-eabi/bin/strip osrr-seed-manager.elf -o osrr-seed-manager_stripped.elf
+        ./utils/makerom_ci -f cia -o osrr-seed-manager.cia -target t -exefslogo -rsf cia.rsf -elf osrr-seed-manager_stripped.elf -icon osrr-seed-manager.smdh
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries
+        path: |
+          osrr-seed-manager.3dsx
+          osrr-seed-manager.smdh
+          osrr-seed-manager.cia
+
+  release:
+    runs-on: 'ubuntu-latest'
+    needs:
+      - build
+    steps:
+      - name: Download all the dists
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+      - name: Create GitHub release
+        uses: svenstaro/upload-release-action@2.9.0
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./*
+          file_glob: true
+          tag: ${{ github.ref }}
+          overwrite: true
+          body: "New release"
