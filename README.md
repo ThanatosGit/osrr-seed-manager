@@ -36,21 +36,6 @@ For extracting `libarchive` is used: https://github.com/libarchive/libarchive/
 Usual stuff like `libctru`, `devkitarm`. Use a search engine how to install it on your machine.  
 Everything was done with `wsl` ony my side.
 
-### zlib
-
-Built zlib:
-
-```bash
-cd zlib/
-AR=$DEVKITPRO/devkitARM/arm-none-eabi/bin/ar CC=$DEVKITPRO/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" ./configure --static
-make
-mkdir -p lib
-cp libz.* lib/
-cd contrib/minizip
-CC=$DEVKITPRO/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-D MINIZIP_FOPEN_NO_64 -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" make
-cd ../../../
-```
-
 ### Built the project
 
 After `zlib` has been built just call `make`.

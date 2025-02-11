@@ -193,6 +193,7 @@ void server_thread_main(void *arg) {
 
             // create file and open it for writing
             Handle file_handle;
+            // TODO: CHeck if file exists
             FSUSER_CreateFile(sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), 0, zip_total_length);
             if (R_FAILED(FSUSER_OpenFile(&file_handle, sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), FS_OPEN_WRITE, 0))) {
                 printf(CONSOLE_RED);

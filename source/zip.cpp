@@ -75,20 +75,27 @@ int unzip(const char *seed_zip_name, const char *title_id) {
 
         u32 bytes_written = 0;
         ssize_t read_bytes;
+        u32 file_buffer_pos = 0;
         do {
             read_bytes = archive_read_data(archive_read, buffer, buffer_size);
             if (read_bytes < 0) {
                 printf(CONSOLE_RED);
-                printf("Failed to read data header\n");
+                printf("Failed to read data\n");
                 printf(CONSOLE_RESET);
             }
-            if (read_bytes > 0) {
-                if (R_FAILED(ret = FSFILE_Write(file_handle, &bytes_written, bytes_written, buffer, read_bytes, FS_WRITE_FLUSH))) {
+
+            u32 buffer_pos = 0;
+            ssize_t bytes_to_write = read_bytes;
+            while (bytes_to_write > 0) {
+                if (R_FAILED(ret = FSFILE_Write(file_handle, &bytes_written, file_buffer_pos, buffer + buffer_pos, bytes_to_write, FS_WRITE_FLUSH))) {
                     printf(CONSOLE_RED);
                     printf("Error could not write to file\n");
                     printf(CONSOLE_RESET);
                     break;
                 }
+                bytes_to_write = bytes_to_write - bytes_written;
+                buffer_pos += bytes_written;
+                file_buffer_pos += bytes_written;
             }
         } while (read_bytes != 0);
         FSFILE_Close(file_handle);

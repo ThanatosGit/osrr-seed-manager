@@ -18,16 +18,6 @@ jobs:
         submodules: recursive
         fetch-depth: 0
         fetch-tags: true
-    - name: Compile zlib
-      run: |
-        cd zlib/
-        AR=$DEVKITPRO/devkitARM/arm-none-eabi/bin/ar CC=$DEVKITPRO/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" ./configure --static
-        make
-        mkdir -p lib
-        cp libz.* lib/
-        cd contrib/minizip
-        CC=/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc CFLAGS="-D MINIZIP_FOPEN_NO_64 -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft" make
-        cd ../../../
     - name: Build
       run: make
     - name: Make cia
