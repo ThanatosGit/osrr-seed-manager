@@ -11,9 +11,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "helpers.h"
+
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
-#define RECV_BUFFERSIZE 4096 * 8
+#define RECV_BUFFERSIZE 1024 * 1024
 
 extern char homebrew_path[];
 
@@ -56,15 +58,16 @@ int init_server() {
         return 1;
     }
 
-    if ((ret = socInit(SOC_buffer, SOC_BUFFERSIZE)) != 0) {
+    if (R_FAILED(ret = socInit(SOC_buffer, SOC_BUFFERSIZE))) {
         failExit("socInit: 0x%08X\n", (unsigned int)ret);
         return 1;
     }
 
+    aptSetSleepAllowed(false);
+
     atexit(soc_shutdown);
 
-    server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if (server_sock < 0) {
+    if (R_FAILED(server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP))) {
         failExit("socket: %d %s\n", errno, strerror(errno));
         return 1;
     }
@@ -76,7 +79,7 @@ int init_server() {
     server.sin_port = htons(1234);
     server.sin_addr.s_addr = INADDR_ANY;
 
-    if ((ret = bind(server_sock, (struct sockaddr *)&server, sizeof(server)))) {
+    if (R_FAILED(ret = bind(server_sock, (struct sockaddr *)&server, sizeof(server)))) {
         close(server_sock);
         failExit("bind: %d %s\n", errno, strerror(errno));
         return 1;
@@ -84,7 +87,7 @@ int init_server() {
 
     fcntl(server_sock, F_SETFL, fcntl(server_sock, F_GETFL, 0) | O_NONBLOCK);
 
-    if ((ret = listen(server_sock, 5))) {
+    if (R_FAILED(ret = listen(server_sock, 5))) {
         failExit("listen: %d %s\n", errno, strerror(errno));
         return 1;
     }
@@ -106,6 +109,28 @@ int receive_until_bytes(int bytes_to_receive) {
         remaining_bytes = remaining_bytes - received;
     }
     return 0;
+}
+
+void flush_to_file(Handle &file_handle, ssize_t to_write, u64 &offset_in_file) {
+    int ret;
+    // how many bytes are written so far in this function call
+    ssize_t written_this_flush = 0;
+    ssize_t left_to_write = to_write;
+    // how many bytes are written per FSFILE_Write call
+    u32 bytes_written;
+
+    while (written_this_flush < to_write) {
+        if (R_FAILED(ret = FSFILE_Write(file_handle, &bytes_written, offset_in_file, recv_buffer + written_this_flush, left_to_write, 0))) {
+            printf(CONSOLE_RED);
+            printf("Error could not create / open file\n");
+            printf(CONSOLE_RESET);
+            close(client_sock);
+            continue;
+        }
+        written_this_flush = written_this_flush + bytes_written;
+        left_to_write = left_to_write - bytes_written;
+        offset_in_file = offset_in_file + bytes_written;
+    }
 }
 
 void server_thread_main(void *arg) {
@@ -153,25 +178,45 @@ void server_thread_main(void *arg) {
                 close(client_sock);
                 continue;
             }
-            int zip_length;
-            memcpy(&zip_length, recv_buffer, 4);
 
             // fourth receive data for file
-            FILE *fptr = fopen(file_name_buffer, "wb");
-            if (fptr == NULL) {
+            int _zip_total_length;
+            memcpy(&_zip_total_length, recv_buffer, 4);
+            // total length to be received
+            u64 zip_total_length = _zip_total_length;
+            // received bytes so far
+            u64 zip_received_bytes = 0;
+            // keep track of offset in the file
+            u64 offset_in_file = 0;
+            // we make multipe recv calls to fill the buffer and keep track of pos
+            ssize_t recv_buffer_pos = 0;
+
+            // create file and open it for writing
+            Handle file_handle;
+            FSUSER_CreateFile(sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), 0, zip_total_length);
+            if (R_FAILED(FSUSER_OpenFile(&file_handle, sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), FS_OPEN_WRITE, 0))) {
                 printf(CONSOLE_RED);
-                printf("Error could not create file\n");
+                printf("Error could not create / open file\n");
                 printf(CONSOLE_RESET);
                 close(client_sock);
                 continue;
             }
-            while ((ret = recv(client_sock, recv_buffer, RECV_BUFFERSIZE, 0)) != 0) {
-                fwrite(recv_buffer, ret, 1, fptr);
-                zip_length = zip_length - ret;
+
+            while ((ret = recv(client_sock, recv_buffer + recv_buffer_pos, RECV_BUFFERSIZE - recv_buffer_pos, 0)) != 0) {
+                zip_received_bytes += ret;
+                recv_buffer_pos += ret;
+
+                // flush only every 512 Kilobytes because sd access is slow
+                if (recv_buffer_pos > 1024 * 512) {
+                    flush_to_file(file_handle, recv_buffer_pos, offset_in_file);
+                    recv_buffer_pos = 0;
+                }
             }
 
-            fclose(fptr);
-            if (zip_length == 0)
+            // flush the rest
+            flush_to_file(file_handle, recv_buffer_pos, offset_in_file);
+
+            if (zip_total_length == zip_received_bytes)
                 printf("\nFile received\n");
             else {
                 printf(CONSOLE_RED);
@@ -188,4 +233,5 @@ void server_thread_main(void *arg) {
     }
     if (server_sock != -1) close(server_sock);
     socExit();
+    free(SOC_buffer);
 }

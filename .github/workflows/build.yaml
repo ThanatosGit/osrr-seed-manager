@@ -40,7 +40,6 @@ jobs:
         name: binaries
         path: |
           osrr-seed-manager.3dsx
-          osrr-seed-manager.smdh
           osrr-seed-manager.cia
 
   release:

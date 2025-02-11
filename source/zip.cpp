@@ -1,132 +1,100 @@
 #include <3ds.h>
+#include <archive.h>
+#include <archive_entry.h>
 #include <dirent.h>
 #include <ftw.h>
+#include <setjmp.h>
 #include <string.h>
-#include <unzip.h>
+
+#include <cstring>
+#include <filesystem>
+#include <string>
 
 #include "helpers.h"
 
-#define READ_BUFFER_SIZE 256000
+#define READ_BUFFER_SIZE 262144
 
 char luma_path_partial[] = "/luma/titles/";
 char dir_delimiter = '/';
 
+// based on https://github.com/libarchive/libarchive/wiki/Examples#user-content-A_Complete_Extractor
 int unzip(const char *seed_zip_name, const char *title_id) {
+    int ret;
+    const u64 buffer_size = 1024 * 1024;
+    u8 *buffer = (u8 *)calloc(buffer_size, 1);
+    struct archive_entry *archive_entry;
+    Handle file_handle;
+    int flags;
+    flags = ARCHIVE_EXTRACT_TIME;
+    flags |= ARCHIVE_EXTRACT_PERM;
+    flags |= ARCHIVE_EXTRACT_ACL;
+    flags |= ARCHIVE_EXTRACT_FFLAGS;
+
+    // delete old seed
     char luma_path_full[MAX_FILENAME];
     char luma_path_for_delete[MAX_FILENAME];
     char zip_file_name[MAX_FILENAME];
+    char entry_name[MAX_FILENAME];
     snprintf(zip_file_name, MAX_FILENAME, "%s%s", homebrew_path, seed_zip_name);
     snprintf(luma_path_full, MAX_FILENAME, "%s%s%c", luma_path_partial, title_id, dir_delimiter);
     snprintf(luma_path_for_delete, MAX_FILENAME, "%s%s", luma_path_partial, title_id);
 
-    printf("Deleting existing mod folder. This may take a short moment...");
-    FS_Archive sd_archive;
-    FSUSER_OpenArchive(&sd_archive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""));
+    printf("Deleting existing mod folder %s. This may take a short moment...\n", luma_path_for_delete);
     FSUSER_DeleteDirectoryRecursively(sd_archive, fsMakePath(PATH_ASCII, luma_path_for_delete));
-    FSUSER_CloseArchive(sd_archive);
-    create_file_path_dirs(luma_path_full);
-    printf("done\n");
+    FSUSER_CreateDirectory(sd_archive, fsMakePath(PATH_ASCII, luma_path_full), 0);
 
-    // Open the zip file
-    unzFile zipfile = unzOpen(zip_file_name);
-    if (zipfile == NULL) {
-        printf("Etiher the file does not exists or is not a zip file: %s\n", zip_file_name);
-        return -1;
+    struct archive *archive_read = archive_read_new();
+    archive_read_support_filter_all(archive_read);
+    archive_read_support_format_all(archive_read);
+
+    ret = archive_read_open_filename(archive_read, zip_file_name, 16384);
+    if (ret != ARCHIVE_OK) {
+        printf(CONSOLE_RED);
+        printf("Failed to open file: %s\n", zip_file_name);
+        printf(CONSOLE_RESET);
     }
 
-    // Get info about the zip file
-    unz_global_info global_info;
-    if (unzGetGlobalInfo(zipfile, &global_info) != UNZ_OK) {
-        printf("Could not read file global info\n");
-        unzClose(zipfile);
-        return -1;
-    }
-
-    // Buffer to hold data read from the zip file.
-    char *read_buffer = (char *)calloc(READ_BUFFER_SIZE, sizeof(char));
-
-    // Loop to extract all files
-    uLong i;
-    for (i = 0; i < global_info.number_entry; ++i) {
-        // Get info about current file.
-        unz_file_info file_info;
-        char filename[MAX_FILENAME];
-        if (unzGetCurrentFileInfo(
-                zipfile,
-                &file_info,
-                filename,
-                MAX_FILENAME,
-                NULL, 0, NULL, 0) != UNZ_OK) {
-            printf("Could not read file:\n%s\n", filename);
-            unzClose(zipfile);
-            free(read_buffer);
-            return -1;
+    while ((ret = archive_read_next_header(archive_read, &archive_entry)) == ARCHIVE_OK) {
+        if (ret != ARCHIVE_OK) {
+            printf(CONSOLE_RED);
+            printf("Failed to read next header\n");
+            printf(CONSOLE_RESET);
         }
 
-        // Check if this entry is a directory or file.
-        char full_file_path[MAX_FILENAME * 2];
-        snprintf(full_file_path, MAX_FILENAME * 2, "%s%s", luma_path_full, filename);
-        const size_t filename_length = strlen(filename);
-        if (filename[filename_length - 1] == dir_delimiter) {
-            // Entry is a directory, so create it.
-            printf("Create dir: %s\n", filename);
-            mkdir(full_file_path, S_IRWXU | S_IRWXG | S_IRWXU);
-        } else {
-            // Entry is a file, so extract it.
-            printf("Extract file: %s\n", filename);
-            if (unzOpenCurrentFile(zipfile) != UNZ_OK) {
-                printf("Could not open file: \n%s\n", filename);
-                unzClose(zipfile);
-                free(read_buffer);
-                return -1;
-            }
+        snprintf(entry_name, MAX_FILENAME, "%s%s%c%s", luma_path_partial, title_id, dir_delimiter, archive_entry_pathname(archive_entry));
+        archive_entry_update_pathname_utf8(archive_entry, luma_path_full);
+        u64 entry_size = archive_entry_size(archive_entry);
 
-            // Open a file to write out the data.
-            FILE *out = fopen(full_file_path, "wb");
-            if (out == NULL) {
-                printf("Could not open destination file: \n%s\n", full_file_path);
-                unzCloseCurrentFile(zipfile);
-                unzClose(zipfile);
-                free(read_buffer);
-                return -1;
-            }
+        if (entry_size == 0) {
+            FSUSER_CreateDirectory(sd_archive, fsMakePath(PATH_ASCII, entry_name), 0);
+            continue;
+        }
+        printf("Extracting: %s\n", entry_name);
+        FSUSER_CreateFile(sd_archive, fsMakePath(PATH_ASCII, entry_name), 0, entry_size);
+        FSUSER_OpenFile(&file_handle, sd_archive, fsMakePath(PATH_ASCII, entry_name), FS_OPEN_WRITE, 0);
 
-            int error = UNZ_OK;
-            do {
-                error = unzReadCurrentFile(zipfile, read_buffer, READ_BUFFER_SIZE);
-                if (error < 0) {
-                    printf("Error %d\n", error);
-                    unzCloseCurrentFile(zipfile);
-                    unzClose(zipfile);
-                    free(read_buffer);
-                    return -1;
+        u32 bytes_written = 0;
+        ssize_t read_bytes;
+        do {
+            read_bytes = archive_read_data(archive_read, buffer, buffer_size);
+            if (read_bytes < 0) {
+                printf(CONSOLE_RED);
+                printf("Failed to read data header\n");
+                printf(CONSOLE_RESET);
+            }
+            if (read_bytes > 0) {
+                if (R_FAILED(ret = FSFILE_Write(file_handle, &bytes_written, bytes_written, buffer, read_bytes, FS_WRITE_FLUSH))) {
+                    printf(CONSOLE_RED);
+                    printf("Error could not write to file\n");
+                    printf(CONSOLE_RESET);
+                    break;
                 }
-
-                // Write data to file.
-                if (error > 0) {
-                    fwrite(read_buffer, error, 1, out);  // You should check return of fwrite...
-                }
-            } while (error > 0);
-
-            fclose(out);
-        }
-
-        unzCloseCurrentFile(zipfile);
-
-        // Go the the next entry listed in the zip file.
-        if ((i + 1) < global_info.number_entry) {
-            if (unzGoToNextFile(zipfile) != UNZ_OK) {
-                printf("Could not read next file\n");
-                unzClose(zipfile);
-                free(read_buffer);
-                return -1;
             }
-        }
+        } while (read_bytes != 0);
+        FSFILE_Close(file_handle);
     }
-
-    unzClose(zipfile);
-    free(read_buffer);
-
     printf("Unzip done. Seed applied successfully\n");
+    archive_read_free(archive_read);
+    if (buffer != NULL) free(buffer);
     return 0;
 }

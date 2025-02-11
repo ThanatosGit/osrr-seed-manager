@@ -22,6 +22,8 @@
 #define MAX_ENTIRES_PER_DIR 50
 
 std::vector<char *> pixel_buffer();
+FS_Archive sd_archive;
+C3D_Tex *tex;
 
 const char *get_title_id(int selected_region) {
     if (selected_region == 0)
@@ -33,16 +35,13 @@ const char *get_title_id(int selected_region) {
 void read_zip_files(std::vector<std::string> &zip_files) {
     while (zip_files.size() > 0) zip_files.pop_back();
 
-    FS_Archive sd_archive;
     Handle handle_homebrew_path;
     u32 entries_read;
     FS_DirectoryEntry *entries = (FS_DirectoryEntry *)calloc(MAX_ENTIRES_PER_DIR, sizeof(FS_DirectoryEntry));
 
-    FSUSER_OpenArchive(&sd_archive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""));
     FSUSER_OpenDirectory(&handle_homebrew_path, sd_archive, fsMakePath(PATH_ASCII, homebrew_path));
     FSDIR_Read(handle_homebrew_path, &entries_read, MAX_ENTIRES_PER_DIR, entries);
     FSDIR_Close(handle_homebrew_path);
-    FSUSER_CloseArchive(sd_archive);
 
     for (u32 i = 0; i < entries_read; i++) {
         char temp_buffer[MAX_FILENAME];
@@ -89,6 +88,25 @@ void write_config(int selected_region) {
     fclose(file_handle);
 }
 
+void deinit() {
+    // tell threads to exit & wait for them to exit
+    if (server_run) {
+        server_run = false;
+        threadJoin(server_thread, 2 * 1000 * 1000 * 1000);
+        threadFree(server_thread);
+    }
+
+    if (tex != NULL) {
+        ImGui::DestroyContext();
+        imgui_sw::unbind_imgui_painting();
+        ImGui::DestroyContext();
+        free(tex);
+        tex = NULL;
+    }
+    gfxExit();
+    FSUSER_CloseArchive(sd_archive);
+}
+
 int main(int argc, char **argv) {
     u16 width = 320, height = 240;
     bool is_window_open = true;
@@ -99,10 +117,11 @@ int main(int argc, char **argv) {
     int open_popup_for = -1;
 
     // some init
-    srvInit();
-    fsInit();
+    osSetSpeedupEnable(true);
     gfxInitDefault();
-    atexit(gfxExit);
+    FSUSER_OpenArchive(&sd_archive, ARCHIVE_SDMC, fsMakePath(PATH_EMPTY, ""));
+    atexit(deinit);
+
     // ensure homebrew path exists
     create_file_path_dirs(homebrew_path);
     read_zip_files(zip_files);
@@ -115,7 +134,7 @@ int main(int argc, char **argv) {
     printf(CONSOLE_RESET);
 
     // lower screen for menu
-    C3D_Tex *tex = (C3D_Tex *)malloc(sizeof(C3D_Tex));
+    tex = (C3D_Tex *)malloc(sizeof(C3D_Tex));
     static const Tex3DS_SubTexture subt3x = {512, 256, 0.0f, 1.0f, 1.0f, 0.0f};
     C2D_Image image = (C2D_Image){tex, &subt3x};
     C3D_TexInit(image.tex, 512, 256, GPU_RGBA8);
@@ -138,12 +157,10 @@ int main(int argc, char **argv) {
     touchPosition touch;
 
     // create thread
-    s32 prio = 0;
-    svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
     // The priority of these child threads must be higher (aka the value is
     // lower) than that of the main thread, otherwise there is thread
     // starvation due to stdio being locked.
-    server_thread = threadCreate(server_thread_main, NULL, STACKSIZE, 0x18, 0, false);
+    server_thread = threadCreate(server_thread_main, NULL, STACKSIZE, 0x30, -1, true);
 
     // Main loop
     while (aptMainLoop()) {
@@ -237,20 +254,5 @@ int main(int argc, char **argv) {
         C2D_DrawImageAt(image, 0.0f, 0.0f, 0.0f, NULL, 1.0f, 1.0f);
         C3D_FrameEnd(0);
     }
-
-    // tell threads to exit & wait for them to exit
-    if (server_run) {
-        server_run = false;
-        threadJoin(server_thread, 2 * 1000 * 1000 * 1000);
-        threadFree(server_thread);
-    }
-
-    imgui_sw::unbind_imgui_painting();
-    ImGui::DestroyContext();
-    gfxExit();
-    fsExit();
-    srvExit();
-    free(tex);
-
     return 0;
 }

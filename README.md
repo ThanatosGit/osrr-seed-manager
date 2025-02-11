@@ -4,7 +4,7 @@
 
 ### Install
 
-Download the `3dsx` and `smdh` file from the release page, copy them to your `3ds` folder on your SD card and use the homebrew launcher to start the application.
+Download the `3dsx` file from the release page, copy it to your `3ds` folder on your SD card and use the homebrew launcher to start the application.
 Alternatively, you can use the `cia` from the release page and install it via FBI.
 
 ### Application
@@ -24,10 +24,10 @@ If you do not want to use this, simply copy the `zip` files via ftp or place the
 ## Development
 
 Do not forget to init the submodules because this repository is using:  
-- zlib: https://github.com/madler/zlib
 - imgui-3ds: https://github.com/hax0kartik/imgui-3ds
 
 The CI script is loosely based on what https://github.com/devkitPro/3ds-hbmenu/ did.
+For extracting `libarchive` is used: https://github.com/libarchive/libarchive/
 
 `cia.rsf` based on https://gist.github.com/jakcron/9f9f02ffd94d98a72632
 
