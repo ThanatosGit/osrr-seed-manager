@@ -26,7 +26,7 @@ If you do not want to use this, simply copy the `zip` files via ftp or place the
 Do not forget to init the submodules because this repository is using:  
 - imgui-3ds: https://github.com/hax0kartik/imgui-3ds
 
-The CI script is loosely based on what https://github.com/devkitPro/3ds-hbmenu/ did.
+The CI script is loosely based on what https://github.com/devkitPro/3ds-hbmenu/ did.  
 For extracting `libarchive` is used: https://github.com/libarchive/libarchive/
 
 `cia.rsf` based on https://gist.github.com/jakcron/9f9f02ffd94d98a72632
@@ -36,9 +36,11 @@ For extracting `libarchive` is used: https://github.com/libarchive/libarchive/
 Usual stuff like `libctru`, `devkitarm`. Use a search engine how to install it on your machine.  
 Everything was done with `wsl` ony my side.
 
+TODO: Dependencies on PORTLIBS. See `dkp-pacman -Sl` output
+
 ### Built the project
 
-After `zlib` has been built just call `make`.
+Just call `make`.
 
 ### Generate cia file
 
