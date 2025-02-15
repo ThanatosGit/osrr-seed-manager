@@ -15,7 +15,8 @@
 
 #define SOC_ALIGN 0x1000
 #define SOC_BUFFERSIZE 0x100000
-#define RECV_BUFFERSIZE 1024 * 1024
+#define RECV_BUFFERSIZE 65536
+#define FILE_BUFFERSIZE 4 * RECV_BUFFERSIZE
 
 extern char homebrew_path[];
 
@@ -111,28 +112,6 @@ int receive_until_bytes(int bytes_to_receive) {
     return 0;
 }
 
-void flush_to_file(Handle &file_handle, ssize_t to_write, u64 &offset_in_file) {
-    int ret;
-    // how many bytes are written so far in this function call
-    ssize_t written_this_flush = 0;
-    ssize_t left_to_write = to_write;
-    // how many bytes are written per FSFILE_Write call
-    u32 bytes_written;
-
-    while (written_this_flush < to_write) {
-        if (R_FAILED(ret = FSFILE_Write(file_handle, &bytes_written, offset_in_file, recv_buffer + written_this_flush, left_to_write, 0))) {
-            printf(CONSOLE_RED);
-            printf("Error could not create / open file\n");
-            printf(CONSOLE_RESET);
-            close(client_sock);
-            continue;
-        }
-        written_this_flush = written_this_flush + bytes_written;
-        left_to_write = left_to_write - bytes_written;
-        offset_in_file = offset_in_file + bytes_written;
-    }
-}
-
 void server_thread_main(void *arg) {
     int ret;
     struct sockaddr_in client;
@@ -182,50 +161,64 @@ void server_thread_main(void *arg) {
             // fourth receive data for file
             int _zip_total_length;
             memcpy(&_zip_total_length, recv_buffer, 4);
+            printf("Receiving %d bytes\n", _zip_total_length);
             // total length to be received
             u64 zip_total_length = _zip_total_length;
             // received bytes so far
             u64 zip_received_bytes = 0;
-            // keep track of offset in the file
-            u64 offset_in_file = 0;
             // we make multipe recv calls to fill the buffer and keep track of pos
             ssize_t recv_buffer_pos = 0;
 
             // create file and open it for writing
-            Handle file_handle;
-            // TODO: CHeck if file exists
-            FSUSER_CreateFile(sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), 0, zip_total_length);
-            if (R_FAILED(FSUSER_OpenFile(&file_handle, sd_archive, fsMakePath(PATH_ASCII, file_name_buffer), FS_OPEN_WRITE, 0))) {
+            FILE *file_handle = fopen(file_name_buffer, "w");
+            if (file_handle == NULL) {
                 printf(CONSOLE_RED);
                 printf("Error could not create / open file\n");
                 printf(CONSOLE_RESET);
                 close(client_sock);
                 continue;
             }
+            // use own buffer otherwise it is extremly slow
+            char *file_buf = (char *)calloc(1, FILE_BUFFERSIZE);
+            setvbuf(file_handle, file_buf, _IOFBF, FILE_BUFFERSIZE);
 
             while ((ret = recv(client_sock, recv_buffer + recv_buffer_pos, RECV_BUFFERSIZE - recv_buffer_pos, 0)) != 0) {
                 zip_received_bytes += ret;
                 recv_buffer_pos += ret;
 
-                // flush only every 512 Kilobytes because sd access is slow
-                if (recv_buffer_pos > 1024 * 512) {
-                    flush_to_file(file_handle, recv_buffer_pos, offset_in_file);
+                // flush only every RECV_BUFFERSIZE bytes because sd access is slow
+                if (recv_buffer_pos >= RECV_BUFFERSIZE) {
+                    ret = fwrite(recv_buffer, recv_buffer_pos, 1, file_handle);
+                    if (ret <= 0) {
+                        printf(CONSOLE_RED);
+                        printf("Error failed to write some data\n");
+                        printf(CONSOLE_RESET);
+                        break;
+                    }
                     recv_buffer_pos = 0;
                 }
             }
 
             // flush the rest
-            flush_to_file(file_handle, recv_buffer_pos, offset_in_file);
+            ret = fwrite(recv_buffer, recv_buffer_pos, 1, file_handle);
+            if (ret <= 0) {
+                printf(CONSOLE_RED);
+                printf("Error failed to write some data\n");
+                printf(CONSOLE_RESET);
+            }
 
             if (zip_total_length == zip_received_bytes)
                 printf("\nFile received\n");
             else {
                 printf(CONSOLE_RED);
-                printf("\nDid not received complete file!\n");
+                printf("Did not received complete file!\n");
+                printf("Received: %lld bytes!\n", zip_received_bytes);
                 printf(CONSOLE_RESET);
                 remove(file_name_buffer);
             }
 
+            fclose(file_handle);
+            free(file_buf);
             close(client_sock);
             client_sock = -1;
             new_data = 1;

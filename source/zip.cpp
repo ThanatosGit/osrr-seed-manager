@@ -59,6 +59,7 @@ int unzip(const char *seed_zip_name, const char *title_id) {
             printf(CONSOLE_RED);
             printf("Failed to read next header\n");
             printf(CONSOLE_RESET);
+            continue;
         }
 
         snprintf(entry_name, MAX_FILENAME, "%s%s%c%s", luma_path_partial, title_id, dir_delimiter, archive_entry_pathname(archive_entry));
@@ -80,8 +81,9 @@ int unzip(const char *seed_zip_name, const char *title_id) {
             read_bytes = archive_read_data(archive_read, buffer, buffer_size);
             if (read_bytes < 0) {
                 printf(CONSOLE_RED);
-                printf("Failed to read data\n");
+                printf("Failed to read data: %s\n", archive_error_string(archive_read));
                 printf(CONSOLE_RESET);
+                break;
             }
 
             u32 buffer_pos = 0;

@@ -47,7 +47,6 @@ void read_zip_files(std::vector<std::string> &zip_files) {
         char temp_buffer[MAX_FILENAME];
         int output_length = utf16_to_utf8((uint8_t *)temp_buffer, entries[i].name, MAX_FILENAME);
         std::string temp_string = std::string(temp_buffer, output_length);
-        temp_string.find(".zip", temp_string.size() - 3);
         bool found = (temp_string.find(".zip", temp_string.size() - 4)) != std::string::npos;
         if (found) zip_files.push_back(std::string(temp_buffer, output_length));
     }

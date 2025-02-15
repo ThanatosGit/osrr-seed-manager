@@ -36,7 +36,10 @@ For extracting `libarchive` is used: https://github.com/libarchive/libarchive/
 Usual stuff like `libctru`, `devkitarm`. Use a search engine how to install it on your machine.  
 Everything was done with `wsl` ony my side.
 
-TODO: Dependencies on PORTLIBS. See `dkp-pacman -Sl` output
+Also following libs needs to be installed:
+```
+sudo dkp-pacman -Syu 3ds-libarchive 3ds-bzip2 3ds-liblzma 3ds-libzstd 3ds-lz4
+```
 
 ### Built the project
 
@@ -54,8 +57,6 @@ $DEVKITPRO/devkitARM/arm-none-eabi/bin/strip osrr-seed-manager.elf -o osrr-seed-
 ```
 
 ## ToDos:
-- Actually write the example to sent to the server :-)
 - License for rdv logo?
 - Add version to cia
 - Maybe add a banner
-- Speed it up somehow?!?
